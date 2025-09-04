@@ -1,41 +1,38 @@
-from django.http import JsonResponse, HttpRequest
-import json
-
 from django.views.decorators.csrf import csrf_exempt
-from pydantic import ValidationError
+from rest_framework import status
+from rest_framework.decorators import api_view
+from rest_framework.request import Request
+from rest_framework.response import Response
 
 from blog.models import Post
-from blog.schemas import PostListSchema, PostSchema, PostCreateSchema
+from blog.serializers import PostSerializer
 
 
 @csrf_exempt
-def post_list(request: HttpRequest) -> JsonResponse:
+@api_view(['GET', 'POST'])
+def post_list(request: Request) -> Response:
     if request.method == 'GET':
         posts = Post.objects.all()
-        response = PostListSchema(posts=list(posts))
-        return JsonResponse(response.model_dump())
+        response = PostSerializer(posts, many=True)
+        return Response(response.data)
 
     elif request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            post = PostCreateSchema.model_validate(data)
+        data = PostSerializer(data=request.data)
 
-            new_post = Post.objects.create(**post.model_dump())
-            response = PostSchema.model_validate(new_post)
-            return JsonResponse(response.model_dump())
-        except ValidationError as e:
-            return JsonResponse(e.errors(), status=400, safe=False)
-        except json.JSONDecodeError as e:
-            return JsonResponse({'error': "Invalid Json"}, status=400)
+        if data.is_valid():
+            data.save()
+            return Response(data.data)
+        return Response(data.errors, status=status.HTTP_400_BAD_REQUEST)
 
     else:
-        return JsonResponse({'error': "Method not allowed"}, status=405)
+        return Response({'error': "Method not allowed"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
-def post_detail(request: HttpRequest, post_id: int) -> JsonResponse:
+@api_view(['GET'])
+def post_detail(request: Request, post_id: int) -> Response:
     try:
         post = Post.objects.get(id=post_id)
-        response = PostSchema.model_validate(post)
-        return JsonResponse(response.model_dump())
+        response = PostSerializer(post)
+        return Response(response.data)
     except Post.DoesNotExist:
-        return JsonResponse({"error": "Post not found"}, status=404)
+        return Response({"error": "Post not found"}, status=status.HTTP_404_NOT_FOUND)
